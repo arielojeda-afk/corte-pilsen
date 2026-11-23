@@ -17,13 +17,13 @@ import type {
   PublicStateResponse,
   TournamentState,
   UserRole,
-} from '../types.ts';
+} from '../types';
 import {
   DEFAULT_APP_SETTINGS,
   SEED_EXPERIENCE_POSTS,
   SEED_FRIEND_GROUPS,
   VALID_CUT_IDS,
-} from './seedData.ts';
+} from './seedData';
 
 export const SUPER_ADMIN_EMAIL = 'ariel.ojeda@lupe.com.py';
 

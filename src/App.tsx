@@ -1,15 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { AdminModal } from './components/AdminModal';
 import { AliadosSection } from './components/AliadosSection';
 import { ButcherModal, PromoQrModal } from './components/ButcherModal';
 import { CarnetModal } from './components/CarnetModal';
 import { ChallengerModal } from './components/ChallengerModal';
 import { CommunitySection } from './components/CommunitySection';
+import { FriendGroupModal } from './components/FriendGroupModal';
 import { GuinnessSection } from './components/GuinnessSection';
 import { HeroSection } from './components/HeroSection';
-import { FriendGroupModal } from './components/FriendGroupModal';
 import { Navbar } from './components/Navbar';
 import { TournamentSection } from './components/TournamentSection';
 import { INITIAL_FRIEND_GROUPS, INITIAL_POSTS } from './data/campaignData';
+import {
+  addCommentApi,
+  createFriendGroupApi,
+  createPostApi,
+  fetchPublicState,
+  getAuthToken,
+  getMe,
+  loginUser,
+  logoutUser,
+  registerUser,
+  submitVote,
+  toggleGroupLikeApi,
+  togglePostFireApi,
+} from './lib/api';
 import {
   AllyLocation,
   CutId,
@@ -30,26 +45,7 @@ import {
   isChallengerRevealed,
   revealBossBattle,
   selectTournamentDay,
-  toggleFriendGroupLike,
 } from './utils/parrillaLogic';
-
-const STORAGE_KEYS = {
-  tournament: 'corte_pilsen_tournament_v3',
-  profile: 'corte_pilsen_profile_v3',
-  posts: 'corte_pilsen_posts_v3',
-  groups: 'corte_pilsen_groups_v4',
-};
-
-function readStorage<T>(key: string, fallback: T): T {
-  if (typeof window === 'undefined') return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
 
 type PendingVoteAction =
   | { type: 'matchup'; cutId: CutId }
@@ -58,59 +54,63 @@ type PendingVoteAction =
 
 export default function App() {
   const [tournament, setTournament] = useState<TournamentState>(() =>
-    readStorage(STORAGE_KEYS.tournament, getInitialTournamentState())
+    getInitialTournamentState()
   );
-  const [profile, setProfile] = useState<ParrilleroProfile | null>(() =>
-    readStorage(STORAGE_KEYS.profile, null)
-  );
-  const [posts, setPosts] = useState<ExperiencePost[]>(() =>
-    readStorage(STORAGE_KEYS.posts, INITIAL_POSTS)
-  );
-  const [groups, setGroups] = useState<FriendGroup[]>(() =>
-    readStorage(STORAGE_KEYS.groups, INITIAL_FRIEND_GROUPS)
-  );
+  const [profile, setProfile] = useState<ParrilleroProfile | null>(null);
+  const [posts, setPosts] = useState<ExperiencePost[]>(INITIAL_POSTS);
+  const [groups, setGroups] = useState<FriendGroup[]>(INITIAL_FRIEND_GROUPS);
 
   const [isButcherOpen, setIsButcherOpen] = useState(false);
   const [isChallengerOpen, setIsChallengerOpen] = useState(false);
   const [selectedPromoAlly, setSelectedPromoAlly] = useState<AllyLocation | null>(null);
   const [isCarnetOpen, setIsCarnetOpen] = useState(false);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [adminToken, setAdminToken] = useState<string | null>(null);
   const [registrationNotice, setRegistrationNotice] = useState<string | null>(null);
   const [pendingVote, setPendingVote] = useState<PendingVoteAction>(null);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
-  const [userPostsCreated, setUserPostsCreated] = useState(0);
+
+  const refreshPublicState = useCallback(async () => {
+    try {
+      const state = await fetchPublicState();
+      setTournament((prev) => ({
+        ...state.tournament,
+        selectedDay: prev.selectedDay,
+      }));
+      if (state.profile) {
+        setProfile(state.profile);
+        if (
+          state.profile.role === 'superadmin' ||
+          state.profile.email.toLowerCase() === 'ariel.ojeda@lupe.com.py'
+        ) {
+          const tok = getAuthToken();
+          if (tok) setAdminToken(tok);
+        }
+      }
+      setPosts(state.posts);
+      setGroups(state.groups);
+    } catch (err) {
+      console.error('Error sincronizando estado con Supabase:', err);
+    }
+  }, []);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.tournament, JSON.stringify(tournament));
-    } catch {
-      // Ignore quota errors
-    }
-  }, [tournament]);
+    void (async () => {
+      const me = await getMe();
+      if (me.authenticated && me.profile) {
+        setProfile(me.profile);
+        if (me.isAdmin) {
+          const tok = getAuthToken();
+          if (tok) setAdminToken(tok);
+        }
+      }
+      await refreshPublicState();
+    })();
+  }, [refreshPublicState]);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(profile));
-    } catch {
-      // Ignore quota errors
-    }
-  }, [profile]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.posts, JSON.stringify(posts));
-    } catch {
-      // Ignore quota errors
-    }
-  }, [posts]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.groups, JSON.stringify(groups));
-    } catch {
-      // Ignore quota errors
-    }
-  }, [groups]);
-
+  const userPostsCreated = profile
+    ? posts.filter((p) => p.authorName === profile.name).length
+    : 0;
   const likedOrOwnedGroupsCount = groups.filter((g) => g.likedByMe || g.isMine).length;
   const computedRank = computeParrilleroRank(
     tournament.bossChoice !== null,
@@ -143,117 +143,176 @@ export default function App() {
   const openRegistrationForVoting = (pending: PendingVoteAction = null) => {
     setPendingVote(pending);
     setRegistrationNotice(
-      'Registrate gratis con tu Carnet Parrillero para habilitar tu voto oficial en las llaves de la semana.'
+      'Registrate o iniciá sesión con tu Carnet Parrillero para habilitar tu voto oficial.'
     );
     setIsCarnetOpen(true);
   };
 
+  const executeMatchupVote = async (activeProfile: ParrilleroProfile, cutId: CutId) => {
+    const nextState = advanceTournamentVote(tournament, cutId);
+    setTournament(nextState);
+
+    const dayKeyMap: Record<DayNumber, 'day1' | 'day2' | 'day3' | 'day4' | 'day5' | 'day6' | 'day7Tradicional'> = {
+      1: 'day1',
+      2: 'day2',
+      3: 'day3',
+      4: 'day4',
+      5: 'day5',
+      6: 'day6',
+      7: 'day7Tradicional',
+    };
+    const dayKey = dayKeyMap[tournament.selectedDay];
+
+    try {
+      const updated = await submitVote({
+        parrilleroId: activeProfile.id,
+        dayKey,
+        cutId,
+      });
+      setTournament((prev) => ({
+        ...updated.tournament,
+        selectedDay: prev.selectedDay,
+      }));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'No se pudo guardar tu voto oficial.');
+      await refreshPublicState();
+    }
+  };
+
+  const executeBossVote = async (
+    activeProfile: ParrilleroProfile,
+    choice: 'retador' | 'challenger'
+  ) => {
+    const nextState = castFinalBossVote(tournament, choice);
+    setTournament(nextState);
+
+    const cutId: CutId =
+      choice === 'retador' ? 'retador' : tournament.userDayVotes.day7Tradicional || 'costilla';
+
+    try {
+      const updated = await submitVote({
+        parrilleroId: activeProfile.id,
+        dayKey: 'day7Boss',
+        cutId,
+        bossChoice: choice,
+      });
+      setTournament((prev) => ({
+        ...updated.tournament,
+        selectedDay: prev.selectedDay,
+      }));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'No se pudo guardar tu voto final.');
+      await refreshPublicState();
+    }
+  };
+
   const handleVoteMatchup = (cutId: CutId) => {
-    if (!canUserVote(profile)) {
+    if (!canUserVote(profile) || !profile) {
       openRegistrationForVoting({ type: 'matchup', cutId });
       return;
     }
-    setTournament((prev) => advanceTournamentVote(prev, cutId));
+    void executeMatchupVote(profile, cutId);
   };
 
   const handleVoteFinalBoss = (choice: 'retador' | 'challenger') => {
-    if (!canUserVote(profile)) {
+    if (!canUserVote(profile) || !profile) {
       openRegistrationForVoting({ type: 'boss', choice });
       return;
     }
-    setTournament((prev) => castFinalBossVote(prev, choice));
+    void executeBossVote(profile, choice);
   };
 
-  const handleSaveProfile = (data: {
+  const handleProcessPendingVote = async (activeProfile: ParrilleroProfile) => {
+    setRegistrationNotice(null);
+    if (!pendingVote) return;
+    const action = pendingVote;
+    setPendingVote(null);
+    if (action.type === 'matchup') {
+      await executeMatchupVote(activeProfile, action.cutId);
+    } else if (action.type === 'boss') {
+      await executeBossVote(activeProfile, action.choice);
+    }
+  };
+
+  const handleRegister = async (data: {
     name: string;
+    email: string;
+    password?: string;
+    phone?: string;
+    ci?: string;
     city: string;
     favoriteCut: string;
     avatarStyle: ParrilleroProfile['avatarStyle'];
   }) => {
-    const nextProfile: ParrilleroProfile = {
-      id: profile?.id ?? `parrillero-${Date.now()}`,
-      name: data.name,
-      city: data.city,
-      favoriteCut: data.favoriteCut,
-      avatarStyle: data.avatarStyle,
-      rank: computedRank,
-      memberNumber:
-        profile?.memberNumber ??
-        `PY-${String(Math.floor(10000 + Math.random() * 89999))}`,
-      createdAt: profile?.createdAt ?? new Date().toISOString(),
-    };
-    setProfile(nextProfile);
-    setRegistrationNotice(null);
-
-    if (pendingVote) {
-      const action = pendingVote;
-      setPendingVote(null);
-      if (action.type === 'matchup') {
-        setTournament((prev) => advanceTournamentVote(prev, action.cutId));
-      } else if (action.type === 'boss') {
-        setTournament((prev) => castFinalBossVote(prev, action.choice));
-      }
+    const session = await registerUser(data);
+    setProfile(session.profile);
+    if (session.isAdmin) {
+      setAdminToken(session.token);
     }
+    await refreshPublicState();
+    await handleProcessPendingVote(session.profile);
   };
 
-  const handleCreatePost = (data: {
+  const handleLogin = async (email: string, password: string) => {
+    const session = await loginUser(email, password);
+    setProfile(session.profile);
+    if (session.isAdmin) {
+      setAdminToken(session.token);
+    }
+    await refreshPublicState();
+    await handleProcessPendingVote(session.profile);
+  };
+
+  const handleLogout = async () => {
+    await logoutUser();
+    setProfile(null);
+    setAdminToken(null);
+    await refreshPublicState();
+  };
+
+  const handleCreatePost = async (data: {
     caption: string;
     cookingPoint: ExperiencePost['cookingPoint'];
     image: string;
   }) => {
-    const newPost: ExperiencePost = {
-      id: `post-${Date.now()}`,
-      authorName: profile?.name ?? 'Parrillero Invitado',
-      authorCity: profile?.city ?? 'Asunción, Paraguay',
-      authorRank: profile ? computedRank : 'Aprendiz de Fuego',
-      cookingPoint: data.cookingPoint,
-      caption: data.caption,
-      image: data.image,
-      fires: 1,
-      hasFired: true,
-      timestamp: 'Recién ahora',
-      comments: [],
-    };
-    setPosts((prev) => [newPost, ...prev]);
-    setUserPostsCreated((c) => c + 1);
+    try {
+      const newPost = await createPostApi({
+        caption: data.caption,
+        cookingPoint: data.cookingPoint,
+        image: data.image,
+        authorRank: profile ? computedRank : 'Aprendiz de Fuego',
+      });
+      setPosts((prev) => [newPost, ...prev]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'No se pudo publicar en el Muro.');
+    }
   };
 
-  const handleToggleFire = (postId: string) => {
-    setPosts((prev) =>
-      prev.map((post) => {
-        if (post.id !== postId) return post;
-        const nextFired = !post.hasFired;
-        return {
-          ...post,
-          hasFired: nextFired,
-          fires: Math.max(0, post.fires + (nextFired ? 1 : -1)),
-        };
-      })
-    );
+  const handleToggleFire = async (postId: string) => {
+    try {
+      const updated = await togglePostFireApi(postId);
+      setPosts(updated.posts);
+    } catch (err) {
+      console.error('Error toggling fire:', err);
+    }
   };
 
-  const handleAddComment = (postId: string, text: string) => {
-    const commentAuthor = profile?.name ?? 'Parrillero Invitado';
-    setPosts((prev) =>
-      prev.map((post) => {
-        if (post.id !== postId) return post;
-        return {
-          ...post,
-          comments: [
-            ...post.comments,
-            {
-              id: `comment-${Date.now()}`,
-              author: commentAuthor,
-              text,
-              timestamp: 'Ahora',
-            },
-          ],
-        };
-      })
-    );
+  const handleAddComment = async (postId: string, text: string) => {
+    try {
+      const comment = await addCommentApi(postId, text);
+      setPosts((prev) =>
+        prev.map((post) =>
+          post.id === postId
+            ? { ...post, comments: [...post.comments, comment] }
+            : post
+        )
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'No se pudo guardar el comentario.');
+    }
   };
 
-  const handleCreateGroup = (data: {
+  const handleCreateGroup = async (data: {
     name: string;
     zone: Exclude<GroupZoneFilter, 'Todas'>;
     neighborhood: string;
@@ -262,23 +321,21 @@ export default function App() {
     favoriteCut: string;
     motto: string;
   }) => {
-    const nextNumber = String(101 + groups.length).padStart(4, '0');
-    const newGroup: FriendGroup = {
-      id: `grp-${Date.now()}`,
-      code: `#GRP-${nextNumber}`,
-      name: data.name,
-      zone: data.zone,
-      neighborhood: data.neighborhood,
-      captainName: data.captainName,
-      members: data.members,
-      favoriteCut: data.favoriteCut,
-      motto: data.motto,
-      likes: 1,
-      likedByMe: true,
-      createdAtMs: Date.now(),
-      isMine: true,
-    };
-    setGroups((prev) => [newGroup, ...prev]);
+    try {
+      const newGroup = await createFriendGroupApi(data);
+      setGroups((prev) => [newGroup, ...prev]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'No se pudo postular el grupo.');
+    }
+  };
+
+  const handleToggleGroupLike = async (groupId: string) => {
+    try {
+      const updated = await toggleGroupLikeApi(groupId);
+      setGroups(updated.groups);
+    } catch (err) {
+      console.error('Error toggling group like:', err);
+    }
   };
 
   return (
@@ -289,6 +346,7 @@ export default function App() {
           setRegistrationNotice(null);
           setIsCarnetOpen(true);
         }}
+        onOpenAdmin={() => setIsAdminOpen(true)}
       />
 
       <main>
@@ -310,7 +368,7 @@ export default function App() {
           onVoteMatchup={handleVoteMatchup}
           onRevealBoss={() => setTournament((prev) => revealBossBattle(prev))}
           onVoteFinalBoss={handleVoteFinalBoss}
-          onResetTournament={() => setTournament(getInitialTournamentState())}
+          onResetTournament={() => void refreshPublicState()}
           onOpenButcherMode={() => setIsButcherOpen(true)}
           onInspectChallenger={() => setIsChallengerOpen(true)}
           onRequestRegistration={() => openRegistrationForVoting(null)}
@@ -341,9 +399,7 @@ export default function App() {
           onCreatePost={handleCreatePost}
           onToggleFire={handleToggleFire}
           onAddComment={handleAddComment}
-          onToggleGroupLike={(groupId) =>
-            setGroups((prev) => toggleFriendGroupLike(prev, groupId))
-          }
+          onToggleGroupLike={(groupId) => void handleToggleGroupLike(groupId)}
         />
       </main>
 
@@ -382,13 +438,23 @@ export default function App() {
         existingProfile={profile}
         computedRank={computedRank}
         registrationNotice={registrationNotice}
-        onSaveProfile={handleSaveProfile}
+        onRegister={handleRegister}
+        onLogin={handleLogin}
+        onLogout={handleLogout}
+        onOpenAdmin={() => setIsAdminOpen(true)}
       />
       <FriendGroupModal
         isOpen={isGroupModalOpen}
         onClose={() => setIsGroupModalOpen(false)}
         defaultCaptainName={profile?.name ?? ''}
         onCreateGroup={handleCreateGroup}
+      />
+      <AdminModal
+        isOpen={isAdminOpen}
+        onClose={() => setIsAdminOpen(false)}
+        adminToken={adminToken}
+        onSetAdminToken={setAdminToken}
+        onPublicDataChanged={refreshPublicState}
       />
     </div>
   );

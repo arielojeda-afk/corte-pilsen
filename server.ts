@@ -10,8 +10,8 @@ import {
   SUPER_ADMIN_EMAIL,
   verifyPasscodeScrypt,
   type DayVoteKey,
-} from './src/server/dbAdapter.ts';
-import { VALID_CUT_IDS } from './src/server/seedData.ts';
+} from './src/server/dbAdapter';
+import { VALID_CUT_IDS } from './src/server/seedData';
 import type {
   AdminAuthMode,
   CutId,
@@ -19,7 +19,7 @@ import type {
   GroupZoneFilter,
   ParrilleroProfile,
   UserRole,
-} from './src/types.ts';
+} from './src/types';
 
 const PORT = Number(process.env.PORT) || 3000;
 const IS_PROD = process.env.NODE_ENV === 'production';
