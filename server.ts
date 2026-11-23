@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { createServer as createViteServer } from 'vite';
+
 import {
   createDbAdapter,
   hashPasscodeScrypt,
@@ -1005,6 +1005,7 @@ async function startServer() {
   // Frontend middleware / static serving (solo cuando no corre como Serverless en Vercel)
   if (!process.env.VERCEL) {
     if (!IS_PROD) {
+      const { createServer: createViteServer } = await import('vite');
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: 'spa',
