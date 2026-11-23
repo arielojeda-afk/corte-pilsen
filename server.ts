@@ -1002,27 +1002,35 @@ async function startServer() {
     }
   });
 
-  // Frontend middleware / static serving
-  if (!IS_PROD) {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distDir = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distDir));
-    app.get('/{*splat}', (_req, res) => {
-      res.sendFile(path.join(distDir, 'index.html'));
+  // Frontend middleware / static serving (solo cuando no corre como Serverless en Vercel)
+  if (!process.env.VERCEL) {
+    if (!IS_PROD) {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distDir = path.resolve(process.cwd(), 'dist');
+      app.use(express.static(distDir));
+      app.get('/{*splat}', (_req, res) => {
+        res.sendFile(path.join(distDir, 'index.html'));
+      });
+    }
+
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`El Corte Pilsen server listening on http://0.0.0.0:${PORT} (${db.backendMode})`);
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`El Corte Pilsen server listening on http://0.0.0.0:${PORT} (${db.backendMode})`);
-  });
+  return app;
 }
 
-startServer().catch((err) => {
-  console.error('Fatal server startup error:', err);
-  process.exit(1);
-});
+export const appPromise = startServer();
+
+if (!process.env.VERCEL) {
+  appPromise.catch((err) => {
+    console.error('Fatal server startup error:', err);
+    process.exit(1);
+  });
+}
