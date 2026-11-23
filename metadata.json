@@ -1,0 +1,6 @@
+{
+  "name": "El Corte Pilsen — Torneo Nacional de la Parrilla",
+  "description": "Campaña oficial El Corte Pilsen en Paraguay. Votá en el torneo de cortes paraguayos, enfrentate al Jefe Final, encontrá carnicerías aliadas y sumate a la comunidad parrillera.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

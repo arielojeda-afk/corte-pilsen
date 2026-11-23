@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Oswald', sans-serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #081F5C;
+    color: #FFFFFF;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono-tabular {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Official Pilsen Paraguay diagonal stripe blue backdrop */
+.pilsen-blue-canvas {
+  background-color: #0B2C7A;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(6, 26, 82, 0.45) 0px,
+    rgba(6, 26, 82, 0.45) 28px,
+    transparent 28px,
+    transparent 56px
+  );
+}
+
+.pilsen-deep-canvas {
+  background-color: #071D54;
+  background-image: radial-gradient(
+    ellipse 75% 45% at 50% 0%,
+    rgba(19, 64, 173, 0.35),
+    transparent 70%
+  );
+}
+
+/* Pilsen Primary Red CTA with crisp gold rim */
+.btn-pilsen-cta {
+  background: linear-gradient(135deg, #D6001C 0%, #B80017 100%);
+  color: #FFFFFF;
+  box-shadow: 0 8px 24px -4px rgba(214, 0, 28, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.2);
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1), filter 180ms ease;
+}
+
+.btn-pilsen-cta:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px -4px rgba(214, 0, 28, 0.7), 0 0 0 1px rgba(229, 184, 59, 0.7);
+  filter: brightness(1.06);
+}
+
+.btn-pilsen-cta:active {
+  transform: translateY(0) scale(0.985);
+}
+
+/* Gold Trophy CTA */
+.btn-pilsen-gold {
+  background: linear-gradient(135deg, #E5B83B 0%, #D49B1A 100%);
+  color: #071D54;
+  box-shadow: 0 6px 20px -4px rgba(229, 184, 59, 0.45);
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), filter 180ms ease;
+}
+
+.btn-pilsen-gold:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+/* Boss Fight Screen Shake */
+@keyframes bossShake {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  12% { transform: translate3d(-6px, 2px, 0) rotate(-0.4deg); }
+  25% { transform: translate3d(6px, -3px, 0) rotate(0.4deg); }
+  37% { transform: translate3d(-5px, -2px, 0) rotate(-0.3deg); }
+  50% { transform: translate3d(5px, 3px, 0) rotate(0.3deg); }
+  62% { transform: translate3d(-4px, 1px, 0); }
+  75% { transform: translate3d(4px, -1px, 0); }
+  88% { transform: translate3d(-2px, 1px, 0); }
+}
+
+.animate-boss-shake {
+  animation: bossShake 520ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-boss-shake {
+    animation: none !important;
+  }
+  html {
+    scroll-behavior: auto !important;
+  }
+}
